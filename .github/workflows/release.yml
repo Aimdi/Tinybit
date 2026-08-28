@@ -1,18 +1,15 @@
-name: Release APK
+name: Android Release
 
 on:
   push:
     tags:
       - 'v*'
-    branches:
-      - master
-    paths:
-      - '.github/workflows/release.yml'
+
   workflow_dispatch:
 
 jobs:
   release:
-    name: Build and Release APK
+    name: Build & Release APK
     runs-on: ubuntu-latest
 
     steps:
@@ -24,26 +21,31 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - name: Configure Keystore
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > app/release.keystore
+          echo "storeFile=release.keystore" > keystore.properties
+          echo "keyAlias=$KEY_ALIAS" >> keystore.properties
+          echo "storePassword=$KEYSTORE_PASSWORD" >> keystore.properties
+          echo "keyPassword=$KEY_PASSWORD" >> keystore.properties
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
 
-      - name: Build GitHub Release APK
+      - name: Build signed release APK
         run: bash ./gradlew assembleGithubRelease --stacktrace
 
-      - name: Get version name
-        id: version
-        run: |
-          VERSION_NAME=$(grep 'versionName' app/build.gradle | head -1 | sed 's/.*versionName "\(.*\)"/\1/')
-          VERSION_CODE=$(grep 'versionCode' app/build.gradle | head -1 | sed 's/.*versionCode \(.*\)/\1/' | tr -d ' ')
-          echo "name=v${VERSION_NAME}" >> $GITHUB_OUTPUT
-          echo "code=${VERSION_CODE}" >> $GITHUB_OUTPUT
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zephyr-launcher
+          path: app/build/outputs/apk/github/release/app-github-release.apk
 
       - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.name }}
-          name: Zephyr ${{ steps.version.outputs.name }}
+          files: app/build/outputs/apk/github/release/app-github-release.apk
           generate_release_notes: true
-          files: app/build/outputs/apk/github/release/app-github-release-unsigned.apk
-          draft: false
-          prerelease: false
